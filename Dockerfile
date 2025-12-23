@@ -26,8 +26,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Копируем игру
-COPY memory_game.py .
+COPY main.py .
 
 # Запуск (требует DISPLAY на хосте)
 
-CMD ["python", "memory_game.py"]
+CMD ["python", "main.py"]
+
