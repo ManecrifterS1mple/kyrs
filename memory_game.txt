@@ -1,0 +1,245 @@
+import pygame
+import random
+import sys
+import json
+import os
+
+pygame.init()
+
+# Настройки окна
+SCREEN_WIDTH = 800
+SCREEN_HEIGHT = 600
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+pygame.display.set_caption("Memory Match — Красивая игра на память")
+
+# Цвета
+BACKGROUND = (20, 22, 30)
+CARD_FRONT = (60, 100, 160)
+CARD_MATCHED = (40, 160, 80)
+TEXT_COLOR = (240, 245, 255)
+ERROR_COLOR = (200, 60, 70)
+HIGHLIGHT = (255, 220, 100)
+BUTTON_BG = (50, 70, 100)
+BUTTON_HOVER = (70, 100, 140)
+ACCENT = (100, 180, 255)
+
+# Шрифты
+font_title = pygame.font.SysFont("Arial", 48, bold=True)
+font_medium = pygame.font.SysFont("Arial", 32, bold=True)
+font_small = pygame.font.SysFont("Arial", 24)
+
+# Файл рекордов
+RECORDS_FILE = "records.json"
+
+def load_records():
+    if os.path.exists(RECORDS_FILE):
+        try:
+            with open(RECORDS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_records(records):
+    with open(RECORDS_FILE, "w", encoding="utf-8") as f:
+        json.dump(records, f, ensure_ascii=False, indent=2)
+
+# Символы
+base_symbols = [chr(i) for i in range(ord('A'), ord('Z') + 1)] + \
+               [str(i) for i in range(10)] + \
+               ['!', '@', '#', '$', '%', '^', '&', '*', '+', '=']
+
+# Выбор уровня
+def select_level():
+    levels = [2, 4, 6]
+    selected = None
+    clock = pygame.time.Clock()
+    running = True
+
+    while running:
+        screen.fill(BACKGROUND)
+        title = font_title.render("Выберите уровень", True, ACCENT)
+        screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 100))
+
+        buttons = []
+        y = 220
+        for size in levels:
+            x = SCREEN_WIDTH // 2 - 60
+            rect = pygame.Rect(x, y, 120, 60)
+            buttons.append((rect, size))
+            mouse_pos = pygame.mouse.get_pos()
+            color = BUTTON_HOVER if rect.collidepoint(mouse_pos) else BUTTON_BG
+            pygame.draw.rect(screen, color, rect, border_radius=16)
+            pygame.draw.rect(screen, (30, 50, 80), rect, 3, border_radius=16)  # ИСПРАВЛЕНО!
+            text = font_medium.render(f"{size}×{size}", True, TEXT_COLOR)
+            screen.blit(text, (x + 60 - text.get_width() // 2, y + 30 - text.get_height() // 2))
+            y += 80
+
+        hint = font_small.render("Нажмите на размер поля", True, (180, 190, 210))
+        screen.blit(hint, (SCREEN_WIDTH // 2 - hint.get_width() // 2, 500))
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                for rect, size in buttons:
+                    if rect.collidepoint(event.pos):
+                        selected = size
+                        running = False
+
+        pygame.display.flip()
+        clock.tick(60)
+
+    return selected
+
+# Основная игра
+def play_game(level_size, records):
+    total = level_size * level_size
+    pairs = total // 2
+    symbols = base_symbols[:pairs]
+    deck = symbols * 2
+    random.shuffle(deck)
+
+    # Размеры
+    max_card = 70
+    gap = 10
+    total_w = level_size * max_card + (level_size - 1) * gap
+    total_h = level_size * max_card + (level_size - 1) * gap
+    start_x = (SCREEN_WIDTH - total_w) // 2
+    start_y = (SCREEN_HEIGHT - total_h) // 2
+
+    positions = []
+    for row in range(level_size):
+        for col in range(level_size):
+            x = start_x + col * (max_card + gap)
+            y = start_y + row * (max_card + gap)
+            positions.append((x, y))
+
+    states = [0] * total
+    first = None
+    moves = 0
+    matches = 0
+    won = False
+
+    show_all = True
+    show_time = pygame.time.get_ticks()
+
+    error_pair = []
+    error_active = False
+    error_start = 0
+
+    clock = pygame.time.Clock()
+    running = True
+
+    while running:
+        now = pygame.time.get_ticks()
+
+        if show_all and now - show_time >= 3000:
+            show_all = False
+            states = [0] * total
+
+        if error_active and now - error_start >= 1000:
+            error_active = False
+            states[error_pair[0]] = 0
+            states[error_pair[1]] = 0
+            error_pair = []
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key in (pygame.K_ESCAPE, pygame.K_q):
+                    return "menu"
+                if event.key == pygame.K_r and won:
+                    return "replay"
+            if not won and not show_all and not error_active and event.type == pygame.MOUSEBUTTONDOWN:
+                mx, my = event.pos
+                for i, (x, y) in enumerate(positions):
+                    if states[i] < 2 and x <= mx <= x + max_card and y <= my <= y + max_card:
+                        if states[i] == 0:
+                            if first is None:
+                                first = i
+                                states[i] = 1
+                            else:
+                                if i != first:
+                                    states[i] = 1
+                                    moves += 1
+                                    if deck[first] == deck[i]:
+                                        states[first] = states[i] = 2
+                                        matches += 1
+                                        if matches == pairs:
+                                            won = True
+                                            key = f"{level_size}x{level_size}"
+                                            old = records.get(key, float('inf'))
+                                            if moves < old:
+                                                records[key] = moves
+                                                save_records(records)
+                                    else:
+                                        error_active = True
+                                        error_pair = [first, i]
+                                        error_start = now
+                                    first = None
+                        break
+
+        screen.fill(BACKGROUND)
+
+        for i, (x, y) in enumerate(positions):
+            is_shown = states[i] > 0 or show_all
+            is_err = error_active and i in error_pair
+
+            if not is_shown and not is_err:
+                pygame.draw.rect(screen, CARD_FRONT, (x, y, max_card, max_card), border_radius=12)
+                pygame.draw.rect(screen, (40, 60, 90), (x, y, max_card, max_card), 2, border_radius=12)
+            else:
+                if is_err:
+                    bg = ERROR_COLOR
+                elif states[i] == 2:
+                    bg = CARD_MATCHED
+                else:
+                    bg = ACCENT
+                pygame.draw.rect(screen, bg, (x, y, max_card, max_card), border_radius=12)
+                text = font_medium.render(deck[i], True, TEXT_COLOR)
+                screen.blit(text, (x + max_card // 2 - text.get_width() // 2,
+                                   y + max_card // 2 - text.get_height() // 2))
+
+        # Статус
+        screen.blit(font_small.render(f"Ходы: {moves}", True, TEXT_COLOR), (20, 20))
+        screen.blit(font_small.render(f"Пар: {matches}/{pairs}", True, TEXT_COLOR), (20, 50))
+        key = f"{level_size}x{level_size}"
+        rec = records.get(key, "–")
+        screen.blit(font_small.render(f"Рекорд: {rec}", True, HIGHLIGHT), (20, 80))
+
+        if show_all:
+            tip = font_small.render("Запоминайте расположение букв!", True, (220, 220, 180))
+            screen.blit(tip, (SCREEN_WIDTH // 2 - tip.get_width() // 2, 20))
+
+        if won:
+            overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 190))
+            screen.blit(overlay, (0, 0))
+            win_text = font_title.render("ПОБЕДА!", True, HIGHLIGHT)
+            moves_text = font_medium.render(f"Ходов: {moves}", True, TEXT_COLOR)
+            screen.blit(win_text, (SCREEN_WIDTH // 2 - win_text.get_width() // 2, 240))
+            screen.blit(moves_text, (SCREEN_WIDTH // 2 - moves_text.get_width() // 2, 310))
+            if moves == records.get(key):
+                rec_text = font_small.render("НОВЫЙ РЕКОРД!", True, (255, 120, 120))
+                screen.blit(rec_text, (SCREEN_WIDTH // 2 - rec_text.get_width() // 2, 350))
+            restart = font_small.render("R — новая игра | ESC/Q — выбрать уровень", True, (150, 220, 180))
+            screen.blit(restart, (SCREEN_WIDTH // 2 - restart.get_width() // 2, 400))
+
+        pygame.display.flip()
+        clock.tick(60)
+
+def main():
+    records = load_records()
+    while True:
+        level = select_level()
+        while True:
+            result = play_game(level, records)
+            if result == "menu":
+                break
+
+if __name__ == "__main__":
+    main()

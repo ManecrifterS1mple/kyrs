@@ -1,0 +1,35 @@
+# ⚠️ ВНИМАНИЕ: ЭТОТ DOCKERFILE НЕ БУДЕТ РАБОТАТЬ "ИЗ КОРОБКИ" НА WINDOWS ИЛИ MACOS,
+# так как Pygame требует графического окна, а Docker-контейнеры изолированы от GUI.
+# Используйте его ТОЛЬКО на Linux с настроенным X11-пробросом.
+# Для учебного проекта рекомендуется запускать напрямую (см. README.md).
+
+FROM python:3.11-slim
+
+# Устанавливаем системные зависимости для Pygame (только для Linux GUI)
+RUN apt-get update && apt-get install -y \
+    libsdl2-dev \
+    libsdl2-image-dev \
+    libsdl2-mixer-dev \
+    libsdl2-ttf-dev \
+    libportmidi-dev \
+    libfreetype6-dev \
+    libpng-dev \
+    libjpeg-dev \
+    libx11-dev \
+    libxcursor-dev \
+    libxrandr-dev \
+    libxinerama-dev \
+    libxi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Копируем зависимости
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Копируем игру
+COPY memory_game.py .
+
+# Запуск (требует DISPLAY на хосте)
+CMD ["python", "memory_game.py"]
